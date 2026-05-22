@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Тетрис</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a12;
+    color: #fff;
+    font-family: system-ui, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    gap: 24px;
+    flex-wrap: wrap;
+    padding: 20px;
+  }
+  canvas { display: block; }
+  #board {
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px;
+    background: #0a0a12;
+  }
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 130px;
+  }
+  .card {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 12px 16px;
+  }
+  .card-label {
+    font-size: 11px;
+    color: rgba(255,255,255,0.45);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-bottom: 4px;
+  }
+  .card-value {
+    font-size: 24px;
+    font-weight: 500;
+  }
+  #next {
+    background: #0a0a12;
+    border-radius: 4px;
+    margin-top: 6px;
+  }
+  button {
+    padding: 9px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.07);
+    color: #fff;
+    transition: background .15s;
+  }
+  button:hover { background: rgba(255,255,255,0.14); }
+  .hint {
+    font-size: 11px;
+    color: rgba(255,255,255,0.3);
+    line-height: 1.9;
+    margin-top: 4px;
+  }
+</style>
+</head>
+<body>
+<canvas id="board" width="300" height="600"></canvas>
+<div class="sidebar">
+  <div class="card">
+    <div class="card-label">Очки</div>
+    <div class="card-value" id="score">0</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Уровень</div>
+    <div class="card-value" id="level">1</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Рекорд</div>
+    <div class="card-value" id="best">0</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Следующая</div>
+    <canvas id="next" width="80" height="80"></canvas>
+  </div>
+  <button id="startBtn">Старт</button>
+  <button id="pauseBtn" style="display:none">Пауза</button>
+  <div class="hint">
+    ← → движение<br>
+    ↑ поворот<br>
+    ↓ быстрее<br>
+    Пробел пауза
+  </div>
+</div>
+
+<script>
+const COLS = 10, ROWS = 20, SZ = 30;
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+const ncanvas = document.getElementById('next');
+const nctx = ncanvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const levelEl = document.getElementById('level');
+const bestEl = document.getElementById('best');
+const startBtn = document.getElementById('startBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+
+const COLORS = ['', '#FF5370','#FFCB6B','#C3E88D','#82AAFF','#F78C6C','#89DDFF','#C792EA'];
+const PIECES = [
+  [[1,1,1,1]],
+  [[2,2],[2,2]],
+  [[0,3,0],[3,3,3]],
+  [[0,4,4],[4,4,0]],
+  [[5,5,0],[0,5,5]],
+  [[6,0,0],[6,6,6]],
+  [[0,0,7],[7,7,7]]
+];
+
+let board, piece, pieceX, pieceY, nextPiece;
+let score, level, lines, best = 0;
+let gameLoop, paused, running;
+
+function newBoard() {
+  return Array.from({length: ROWS}, () => new Array(COLS).fill(0));
+}
+function randPiece() {
+  return JSON.parse(JSON.stringify(PIECES[Math.floor(Math.random() * PIECES.length)]));
+}
+function valid(p, x, y) {
+  return p.every((row, dr) => row.every((v, dc) =>
+    !v || (y+dr >= 0 && y+dr < ROWS && x+dc >= 0 && x+dc < COLS && !board[y+dr][x+dc])
+  ));
+}
+function rotate(p) {
+  return p[0].map((_, i) => p.map(r => r[i]).reverse());
+}
+function ghostY() {
+  let gy = pieceY;
+  while (valid(piece, pieceX, gy + 1)) gy++;
+  return gy;
+}
+
+function drawCell(c, colorIdx, px, py, s) {
+  c.fillStyle = COLORS[colorIdx];
+  c.fillRect(px * s + 1, py * s + 1, s - 2, s - 2);
+  c.fillStyle = 'rgba(255,255,255,0.18)';
+  c.fillRect(px * s + 1, py * s + 1, s - 2, 4);
+  c.fillStyle = 'rgba(0,0,0,0.2)';
+  c.fillRect(px * s + 1, py * s + s - 4, s - 2, 3);
+}
+
+function draw() {
+  ctx.fillStyle = '#0a0a12';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 0.5;
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      ctx.strokeRect(c * SZ, r * SZ, SZ, SZ);
+      if (board[r][c]) drawCell(ctx, board[r][c], c, r, SZ);
+    }
+  }
+
+  if (piece) {
+    const gy = ghostY();
+    piece.forEach((row, dr) => row.forEach((v, dc) => {
+      if (v) {
+        ctx.fillStyle = 'rgba(255,255,255,0.1)';
+        ctx.fillRect((pieceX + dc) * SZ + 1, (gy + dr) * SZ + 1, SZ - 2, SZ - 2);
+      }
+    }));
+    piece.forEach((row, dr) => row.forEach((v, dc) => {
+      if (v) drawCell(ctx, v, pieceX + dc, pieceY + dr, SZ);
+    }));
+  }
+}
+
+function drawNext() {
+  nctx.fillStyle = '#0a0a12';
+  nctx.fillRect(0, 0, 80, 80);
+  if (!nextPiece) return;
+  const s = 16;
+  const ox = Math.floor((5 - nextPiece[0].length) / 2);
+  const oy = Math.floor((5 - nextPiece.length) / 2);
+  nextPiece.forEach((row, r) => row.forEach((v, c) => {
+    if (v) {
+      nctx.fillStyle = COLORS[v];
+      nctx.fillRect((ox + c) * s + 1, (oy + r) * s + 1, s - 2, s - 2);
+      nctx.fillStyle = 'rgba(255,255,255,0.18)';
+      nctx.fillRect((ox + c) * s + 1, (oy + r) * s + 1, s - 2, 3);
+    }
+  }));
+}
+
+function clearLines() {
+  let cleared = 0;
+  for (let r = ROWS - 1; r >= 0; r--) {
+    if (board[r].every(c => c)) {
+      board.splice(r, 1);
+      board.unshift(new Array(COLS).fill(0));
+      cleared++;
+      r++;
+    }
+  }
+  if (cleared) {
+    const pts = [0, 100, 300, 500, 800];
+    score += pts[cleared] * level;
+    lines += cleared;
+    level = Math.floor(lines / 10) + 1;
+    scoreEl.textContent = score;
+    levelEl.textContent = level;
+    clearInterval(gameLoop);
+    gameLoop = setInterval(tick, Math.max(80, 500 - level * 40));
+  }
+}
+
+function spawnPiece() {
+  piece = nextPiece;
+  nextPiece = randPiece();
+  pieceX = Math.floor(COLS / 2) - Math.floor(piece[0].length / 2);
+  pieceY = 0;
+  drawNext();
+  if (!valid(piece, pieceX, pieceY)) gameOver();
+}
+
+function tick() {
+  if (paused) return;
+  if (valid(piece, pieceX, pieceY + 1)) {
+    pieceY++;
+  } else {
+    piece.forEach((row, dr) => row.forEach((v, dc) => {
+      if (v) board[pieceY + dr][pieceX + dc] = v;
+    }));
+    clearLines();
+    spawnPiece();
+  }
+  draw();
+}
+
+function gameOver() {
+  clearInterval(gameLoop);
+  running = false;
+  paused = false;
+  if (score > best) { best = score; bestEl.textContent = best; }
+  pauseBtn.style.display = 'none';
+  startBtn.style.display = '';
+  startBtn.textContent = 'Играть снова';
+
+  ctx.fillStyle = 'rgba(10,10,18,0.8)';
+  ctx.fillRect(0, canvas.height / 2 - 60, canvas.width, 120);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 24px system-ui';
+  ctx.textAlign = 'center';
+  ctx.fillText('Игра окончена', canvas.width / 2, canvas.height / 2 - 14);
+  ctx.font = '15px system-ui';
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.fillText('Очки: ' + score, canvas.width / 2, canvas.height / 2 + 18);
+}
+
+function startGame() {
+  board = newBoard();
+  score = 0; level = 1; lines = 0; paused = false; running = true;
+  scoreEl.textContent = '0';
+  levelEl.textContent = '1';
+  nextPiece = randPiece();
+  spawnPiece();
+  clearInterval(gameLoop);
+  gameLoop = setInterval(tick, 500);
+  startBtn.style.display = 'none';
+  pauseBtn.style.display = '';
+  pauseBtn.textContent = 'Пауза';
+  draw();
+}
+
+startBtn.addEventListener('click', startGame);
+pauseBtn.addEventListener('click', () => {
+  paused = !paused;
+  pauseBtn.textContent = paused ? 'Продолжить' : 'Пауза';
+  if (!paused) draw();
+});
+
+document.addEventListener('keydown', e => {
+  if (!running || !piece) return;
+  if (e.code === 'Space') { pauseBtn.click(); e.preventDefault(); return; }
+  if (paused) return;
+  if (e.key === 'ArrowLeft' && valid(piece, pieceX - 1, pieceY)) { pieceX--; draw(); }
+  else if (e.key === 'ArrowRight' && valid(piece, pieceX + 1, pieceY)) { pieceX++; draw(); }
+  else if (e.key === 'ArrowDown') { tick(); }
+  else if (e.key === 'ArrowUp') { const r = rotate(piece); if (valid(r, pieceX, pieceY)) { piece = r; draw(); } }
+  if (['ArrowLeft','ArrowRight','ArrowDown','ArrowUp'].includes(e.key)) e.preventDefault();
+});
+
+ctx.fillStyle = '#0a0a12';
+ctx.fillRect(0, 0, canvas.width, canvas.height);
+ctx.fillStyle = 'rgba(255,255,255,0.25)';
+ctx.font = '16px system-ui';
+ctx.textAlign = 'center';
+ctx.fillText('Нажмите «Старт»', canvas.width / 2, canvas.height / 2);
+</script>
+</body>
+</html>
