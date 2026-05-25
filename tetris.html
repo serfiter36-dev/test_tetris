@@ -145,6 +145,7 @@ let board, piece, pieceX, pieceY, nextPiece;
 let score, level, lines, best = 0;
 let gameLoop, paused, running;
 let playerName = '';
+let bravoAlpha = 0, bravoRaf = null;
 
 function loadName() {
   const saved = localStorage.getItem('tetris_player_name');
@@ -210,6 +211,18 @@ function draw() {
       if (v) drawCell(ctx, v, pieceX + dc, pieceY + dr, SZ);
     }));
   }
+
+  if (bravoAlpha > 0) {
+    ctx.save();
+    ctx.globalAlpha = bravoAlpha;
+    ctx.font = 'bold 42px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#C3E88D';
+    ctx.shadowColor = 'rgba(195,232,141,0.9)';
+    ctx.shadowBlur = 24;
+    ctx.fillText('Молодец!', canvas.width / 2, canvas.height / 2);
+    ctx.restore();
+  }
 }
 
 function drawNext() {
@@ -229,6 +242,19 @@ function drawNext() {
   }));
 }
 
+function showBravo() {
+  bravoAlpha = 1;
+  if (bravoRaf) cancelAnimationFrame(bravoRaf);
+  const start = performance.now();
+  const duration = 1400;
+  function fade(now) {
+    bravoAlpha = Math.max(0, 1 - (now - start) / duration);
+    draw();
+    if (bravoAlpha > 0) bravoRaf = requestAnimationFrame(fade);
+  }
+  bravoRaf = requestAnimationFrame(fade);
+}
+
 function clearLines() {
   let cleared = 0;
   for (let r = ROWS - 1; r >= 0; r--) {
@@ -240,6 +266,7 @@ function clearLines() {
     }
   }
   if (cleared) {
+    showBravo();
     const pts = [0, 100, 300, 500, 800];
     score += pts[cleared] * level;
     lines += cleared;
