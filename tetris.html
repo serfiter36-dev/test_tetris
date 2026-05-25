@@ -63,6 +63,19 @@
     transition: background .15s;
   }
   button:hover { background: rgba(255,255,255,0.14); }
+  #nameInput {
+    width: 100%;
+    padding: 7px 10px;
+    font-size: 13px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.07);
+    color: #fff;
+    outline: none;
+    margin-top: 6px;
+  }
+  #nameInput::placeholder { color: rgba(255,255,255,0.3); }
+  #nameInput:focus { border-color: rgba(255,255,255,0.45); }
   .hint {
     font-size: 11px;
     color: rgba(255,255,255,0.3);
@@ -90,6 +103,10 @@
     <div class="card-label">Следующая</div>
     <canvas id="next" width="80" height="80"></canvas>
   </div>
+  <div class="card">
+    <div class="card-label">Игрок</div>
+    <input id="nameInput" type="text" maxlength="20" placeholder="Введите имя">
+  </div>
   <button id="startBtn">Старт</button>
   <button id="pauseBtn" style="display:none">Пауза</button>
   <div class="hint">
@@ -111,6 +128,7 @@ const levelEl = document.getElementById('level');
 const bestEl = document.getElementById('best');
 const startBtn = document.getElementById('startBtn');
 const pauseBtn = document.getElementById('pauseBtn');
+const nameInput = document.getElementById('nameInput');
 
 const COLORS = ['', '#FF5370','#FFCB6B','#C3E88D','#82AAFF','#F78C6C','#89DDFF','#C792EA'];
 const PIECES = [
@@ -126,6 +144,17 @@ const PIECES = [
 let board, piece, pieceX, pieceY, nextPiece;
 let score, level, lines, best = 0;
 let gameLoop, paused, running;
+let playerName = '';
+
+function loadName() {
+  const saved = localStorage.getItem('tetris_player_name');
+  if (saved) { nameInput.value = saved; playerName = saved; }
+}
+function saveName() {
+  playerName = nameInput.value.trim() || 'Игрок';
+  localStorage.setItem('tetris_player_name', playerName);
+}
+loadName();
 
 function newBoard() {
   return Array.from({length: ROWS}, () => new Array(COLS).fill(0));
@@ -254,18 +283,21 @@ function gameOver() {
   startBtn.style.display = '';
   startBtn.textContent = 'Играть снова';
 
-  ctx.fillStyle = 'rgba(10,10,18,0.8)';
-  ctx.fillRect(0, canvas.height / 2 - 60, canvas.width, 120);
+  ctx.fillStyle = 'rgba(10,10,18,0.85)';
+  ctx.fillRect(0, canvas.height / 2 - 72, canvas.width, 144);
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 24px system-ui';
   ctx.textAlign = 'center';
-  ctx.fillText('Игра окончена', canvas.width / 2, canvas.height / 2 - 14);
+  ctx.fillText('Игра окончена', canvas.width / 2, canvas.height / 2 - 28);
   ctx.font = '15px system-ui';
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.fillText(playerName, canvas.width / 2, canvas.height / 2 + 4);
   ctx.fillStyle = 'rgba(255,255,255,0.6)';
-  ctx.fillText('Очки: ' + score, canvas.width / 2, canvas.height / 2 + 18);
+  ctx.fillText('Очки: ' + score, canvas.width / 2, canvas.height / 2 + 28);
 }
 
 function startGame() {
+  saveName();
   board = newBoard();
   score = 0; level = 1; lines = 0; paused = false; running = true;
   scoreEl.textContent = '0';
@@ -287,7 +319,10 @@ pauseBtn.addEventListener('click', () => {
   if (!paused) draw();
 });
 
+nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') startBtn.click(); });
+
 document.addEventListener('keydown', e => {
+  if (e.target === nameInput) return;
   if (!running || !piece) return;
   if (e.code === 'Space') { pauseBtn.click(); e.preventDefault(); return; }
   if (paused) return;
